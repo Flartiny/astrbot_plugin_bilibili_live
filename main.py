@@ -41,6 +41,27 @@ class BilibiliLive(Star):
         }
         self._process_task: asyncio.Task | None = None
 
+        self._subscribers = []
+
+    # 注册消息订阅者
+    def register_message_subscriber(self, callback):
+        """
+        注册一个回调函数，当有新的Bilibili直播消息时会被调用。
+        回调函数应该是一个asyncio可等待对象 (async def)。
+        """
+        if callback not in self._subscribers:
+            self._subscribers.append(callback)
+            logger.info(f"Registered new Bilibili Live message subscriber: {callback.__name__}")
+
+    # 取消注册消息订阅者
+    def unregister_message_subscriber(self, callback):
+        """
+        取消注册一个回调函数。
+        """
+        if callback in self._subscribers:
+            self._subscribers.remove(callback)
+            logger.info(f"Unregistered Bilibili Live message subscriber: {callback.__name__}")
+
     async def initialize(self):
         """初始化"""
         if self.web_client:
@@ -134,6 +155,17 @@ class BilibiliLive(Star):
                 message=f"[上舰] {message.user_name}({message.user_id})成为了{guard_level_name}",
             )
 
+        await self._distribute_message_to_subscribers(message)
+
+    async def _distribute_message_to_subscribers(self, message: bili_msg.BiliMessage):
+        """将消息分发给所有注册的订阅者"""
+        for subscriber_callback in list(self._subscribers): # 使用list()避免在迭代时修改列表
+            try:
+                # 异步调用订阅者的回调函数
+                self.context.create_task(subscriber_callback(message))
+            except Exception as e:
+                logger.error(f"Error calling Bilibili Live message subscriber {subscriber_callback.__name__}: {e}")
+
     async def _send_llm_message(self, sender: str, message: str):
         """处理LLM聊天并更新上下文"""
         resp = await self.context.get_using_provider().text_chat(
@@ -150,8 +182,9 @@ class BilibiliLive(Star):
         """发送消息"""
         logger.debug(f"bilibili_live message: {message}")
         work_mode = self.config["plugin_settings"]["work_mode"]
-
-        if work_mode == "forward_only":
+        if work_mode == "distribute_only":
+            pass
+        elif work_mode == "forward_only":
             for dest in self.config["plugin_settings"]["forward_destinations"]:
                 await self.context.send_message(dest, MessageChain([Plain(message)]))
         elif work_mode == "llm_chat_forward":
