@@ -154,7 +154,6 @@ class BilibiliLive(Star):
                 sender_name=message.user_name,
                 message=f"[上舰] {message.user_name}({message.user_id})成为了{guard_level_name}",
             )
-
         await self._distribute_message_to_subscribers(message)
 
     async def _distribute_message_to_subscribers(self, message: bili_msg.BiliMessage):
@@ -162,7 +161,8 @@ class BilibiliLive(Star):
         for subscriber_callback in list(self._subscribers): # 使用list()避免在迭代时修改列表
             try:
                 # 异步调用订阅者的回调函数
-                self.context.create_task(subscriber_callback(message))
+                loop = asyncio.get_running_loop()
+                loop.create_task(subscriber_callback(message))
             except Exception as e:
                 logger.error(f"Error calling Bilibili Live message subscriber {subscriber_callback.__name__}: {e}")
 
